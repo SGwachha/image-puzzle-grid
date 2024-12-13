@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth.ts';
 import { Link, useNavigate } from 'react-router-dom';
 import Notification from '../common/Notification.tsx';
@@ -9,33 +9,35 @@ const Signup: React.FC = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const { login } = useAuth();
+    const { login, register, isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+    // Redirecting
+    useEffect(() => {
+        if (isAuthenticated) {
+            navigate('/', { replace: true });
+        }
+    }, [isAuthenticated, navigate]);
+
     const validatePassword = (password: string): { isValid: boolean; message: string } => {
-        // Minimum 8 characters
         if (password.length < 8) {
             return { isValid: false, message: 'Password must be at least 8 characters long' };
         }
 
-        // Must contain at least one uppercase letter
         if (!/[A-Z]/.test(password)) {
             return { isValid: false, message: 'Password must contain at least one uppercase letter' };
         }
 
-        // Must contain at least one lowercase letter
         if (!/[a-z]/.test(password)) {
             return { isValid: false, message: 'Password must contain at least one lowercase letter' };
         }
 
-        // Must contain at least one number
         if (!/\d/.test(password)) {
             return { isValid: false, message: 'Password must contain at least one number' };
         }
 
-        // Must contain at least one special character
         if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
             return { isValid: false, message: 'Password must contain at least one special character' };
         }
@@ -46,7 +48,6 @@ const Signup: React.FC = () => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Validate password strength
         const passwordValidation = validatePassword(password);
         if (!passwordValidation.isValid) {
             setNotification({
@@ -64,39 +65,14 @@ const Signup: React.FC = () => {
             return;
         }
 
-        // Get existing users from localStorage
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        
-        // Check if username already exists
-        if (users.some((user: { username: string }) => user.username === username)) {
+        const success = register(username, password);
+        if (!success) {
             setNotification({
                 message: 'Username already exists',
                 type: 'error'
             });
             return;
         }
-
-        // Check if password is already used
-        if (users.some((user: { hashedPassword: string }) => user.hashedPassword === password)) {
-            setNotification({
-                message: 'This password is already in use. Please choose a unique password',
-                type: 'error'
-            });
-            return;
-        }
-
-        // Create new user
-        const newUser = {
-            id: Date.now().toString(),
-            username,
-            hashedPassword: password,
-            currentScore: 0,
-            highestScore: 0,
-            currentLevel: 1
-        };
-
-        users.push(newUser);
-        localStorage.setItem('users', JSON.stringify(users));
 
         setNotification({
             message: 'Registration successful! Redirecting to login...',

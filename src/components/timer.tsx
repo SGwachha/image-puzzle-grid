@@ -5,18 +5,18 @@ const Timer: React.FC = () => {
     const { state, dispatch } = useGame();
 
     useEffect(() => {
-        let timer: NodeJS.Timeout | null = null;
+        if (!state.isGameStarted) return;
 
-        if (state.isGameStarted && state.timeRemaining > 0) {
-            timer = setInterval(() => {
+        const timer = setInterval(() => {
+            if (state.timeRemaining > 0) {
                 dispatch({ type: 'DECREASE_TIME' });
-            }, 1000);
-        }
+            } else {
+                dispatch({ type: 'RESET_GAME' });
+            }
+        }, 1000);
 
-        return () => {
-            if (timer) clearInterval(timer);
-        };
-    }, [dispatch, state.isGameStarted, state.timeRemaining]);
+        return () => clearInterval(timer);
+    }, [state.isGameStarted, state.timeRemaining, dispatch]);
 
     const formatTime = (seconds: number): string => {
         const minutes = Math.floor(seconds / 60);
@@ -25,16 +25,8 @@ const Timer: React.FC = () => {
     };
 
     return (
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-lg font-bold">Time Remaining</h3>
-            <div className="text-3xl font-mono">
-                {formatTime(state.timeRemaining)}
-            </div>
-            {!state.isGameStarted && (
-                <div className="text-sm text-gray-500 mt-2">
-                    Timer will start when you move the first piece
-                </div>
-            )}
+        <div className="text-xl font-bold">
+            Time: {formatTime(state.timeRemaining)}
         </div>
     );
 };

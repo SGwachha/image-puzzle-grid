@@ -12,27 +12,31 @@ const Login: React.FC = () => {
     const { login } = useAuth();
     const navigate = useNavigate();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Function to handle the login
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        const success = login(username, password);
+        try {
+            const success = await login(username, password);
+            if (!success) {
+                setNotification({
+                    message: 'Invalid username or password',
+                    type: 'error'
+                });
+                return;
+            }
 
-        if (!success) {
             setNotification({
-                message: 'Invalid username or password',
+                message: 'Login successful! Redirecting...',
+                type: 'success'
+            });
+
+        } catch (error) {
+            setNotification({
+                message: 'An error occurred during login',
                 type: 'error'
             });
-            return;
         }
-
-        setNotification({
-            message: 'Login successful! Redirecting...',
-            type: 'success'
-        });
-        
-        setTimeout(() => {
-            navigate('/', { replace: true });
-        }, 1500);
     };
 
     const togglePasswordVisibility = () => {

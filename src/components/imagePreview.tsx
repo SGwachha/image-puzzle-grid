@@ -13,7 +13,7 @@ const ImagePreview: React.FC = () => {
     const [showPreview, setShowPreview] = useState(false);
 
     const handlePreviewClick = () => {
-        if (state.points > 0) {
+        if (state.points > 0 && !showPreview) {
             dispatch({ type: 'USE_PREVIEW' });
             setShowPreview(true);
             setTimeout(() => {
@@ -23,22 +23,37 @@ const ImagePreview: React.FC = () => {
     };
 
     return (
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-lg font-bold mb-2">Image Preview</h3>
-            <button
-                onClick={handlePreviewClick}
-                disabled={state.points === 0}
-                className="bg-blue-500 text-white px-4 py-2 rounded disabled:bg-gray-400"
-            >
-                Show Preview ({state.points} points left)
-            </button>
-            {showPreview && (
-                <div className="mt-4">
+        <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Image Preview</h3>
+                <span className="text-sm text-gray-500">
+                    Points: {state.points}
+                </span>
+            </div>
+            {showPreview ? (
+                <div className="relative aspect-square">
                     <img
                         src={state.currentImage}
-                        alt="Puzzle Preview"
-                        className="w-full rounded"
+                        alt="Preview"
+                        className="w-full h-full object-cover rounded"
                     />
+                </div>
+            ) : (
+                <button
+                    onClick={handlePreviewClick}
+                    disabled={state.points <= 0}
+                    className={`w-full py-2 px-4 rounded ${
+                        state.points > 0
+                            ? 'bg-blue-500 text-white hover:bg-blue-600'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                >
+                    Show Preview (1 point)
+                </button>
+            )}
+            {showPreview && (
+                <div className="mt-2 text-center text-sm text-gray-500">
+                    Preview will hide in 5 seconds
                 </div>
             )}
         </div>

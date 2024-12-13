@@ -1,50 +1,102 @@
 import { useState, useEffect } from 'react';
-import { User } from '../types';
 import { useNavigate } from 'react-router-dom';
 
+import { User } from '../types';
+import { 
+    hashPassword, 
+    encryptData, 
+    decryptData, 
+    createSession, 
+    validateSession, 
+    getSessionUser 
+} from '../utils/security.ts';
+
 export const useAuth = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState<User | null>(null);
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+        return validateSession();
+    });
+    const [user, setUser] = useState<User | null>(() => {
+        return getSessionUser();
+    });
     const navigate = useNavigate();
 
     useEffect(() => {
-        const sessionUser = sessionStorage.getItem('user');
-        if (sessionUser) {
-            setUser(JSON.parse(sessionUser));
-            setIsAuthenticated(true);
-            navigate('/');
+        if (isAuthenticated) {
+            navigate('/dashboard', { replace: true });
         }
-    }, [navigate]);
+    }, [isAuthenticated, navigate]);
 
-    const login = (username: string, password: string) => {
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        const user = users.find((u: { username: string; hashedPassword: string }) => 
-            u.username === username && u.hashedPassword === password
-        );
+    const login = async (username: string, password: string) => {
+        try {
+            const hashedPassword = hashPassword(password);
+            const encryptedUsers = localStorage.getItem('users');
+            let users = [];
+            
+            if (encryptedUsers) {
+                const decryptedUsers = decryptData(encryptedUsers);
+                users = Array.isArray(decryptedUsers) ? decryptedUsers : [];
+            }
 
-        if (user) {
-            sessionStorage.setItem('user', JSON.stringify(user));
-            setUser(user);
-            setIsAuthenticated(true);
-            navigate('/', { replace: true });
+            const user = users.find((u: { username: string; hashedPassword: string }) => 
+                u.username === username && u.hashedPassword === hashedPassword
+            );
+
+            if (user) {
+                createSession(user);
+                setUser(user);
+                setIsAuthenticated(true);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('Login error:', error);
+            return false;
+        }
+    };
+
+    const register = (username: string, password: string) => {
+        try {
+            const hashedPassword = hashPassword(password);
+            const encryptedUsers = localStorage.getItem('users');
+            let users = [];
+
+            if (encryptedUsers) {
+                const decryptedUsers = decryptData(encryptedUsers);
+                users = Array.isArray(decryptedUsers) ? decryptedUsers : [];
+            }
+
+            if (users.some((u: { username: string }) => u.username === username)) {
+                return false;
+            }
+
+            const newUser = {
+                id: Date.now().toString(),
+                username,
+                hashedPassword,
+                currentScore: 0,
+                highestScore: 0,
+                currentLevel: 1
+            };
+
+            users.push(newUser);
+            localStorage.setItem('users', encryptData(users));
             return true;
+        } catch (error) {
+            console.error('Registration error:', error);
+            return false;
         }
-        return false;
     };
 
     const logout = () => {
-        sessionStorage.removeItem('user');
-        setUser(null);
-        setIsAuthenticated(false);
-        navigate('/login');
+        try {
+            sessionStorage.removeItem('userSession');
+            setUser(null);
+            setIsAuthenticated(false);
+            navigate('/login', { replace: true });
+        } catch (error) {
+            console.error('Logout error:', error);
+        }
     };
 
-    return { isAuthenticated, user, login, logout };
-};
-
-// Simple hash function (replace with more secure version in production)
-const hashPassword = (password: string): string => {
-    return password.split('').reduce((hash, char) => {
-        return ((hash << 5) - hash) + char.charCodeAt(0) | 0;
-    }, 0).toString(16);
+    return { isAuthenticated, user, login, register, logout };
 }; 
