@@ -2,43 +2,59 @@
 React Dependencies
 */
 import React from 'react';
+import { GAME_SETTINGS } from '../utils/puzzleConfig.ts';
 
-/*
-Internal Dependencies
-*/
-import { useGame } from '../context/GameContext.tsx';
+interface ScoreboardProps {
+    score: number;
+    level: number;
+    timeLeft: number;
+    incorrectMoves: number;
+}
 
-const Scoreboard: React.FC = () => {
-    const { state } = useGame();
+export const Scoreboard: React.FC<ScoreboardProps> = ({ 
+    score = 0, 
+    level = 1, 
+    timeLeft = GAME_SETTINGS.INITIAL_TIME, 
+    incorrectMoves = 0 
+}) => {
+    // Ensure all values are valid numbers
+    const safeScore = isNaN(score) ? 0 : score;
+    const safeLevel = isNaN(level) ? 1 : level;
+    const safeTimeLeft = isNaN(timeLeft) ? GAME_SETTINGS.INITIAL_TIME : timeLeft;
+    const safeIncorrectMoves = isNaN(incorrectMoves) ? 0 : incorrectMoves;
 
-    const calculateScore = (): { score: number; rating: string } => {
-        const timeUsedPercentage = (state.maxTime - state.timeRemaining) / state.maxTime * 100;
-
-        if (timeUsedPercentage <= 30 && state.incorrectMoves === 0) {
-            return { score: 100, rating: 'Excellent!' };
-        } else if (timeUsedPercentage <= 50 && state.incorrectMoves <= 3) {
-            return { score: 75, rating: 'Good Job!' };
-        } else if (timeUsedPercentage <= 99 && state.incorrectMoves <= 6) {
-            return { score: 50, rating: 'You Can Do Better' };
-        } else {
-            return { score: 25, rating: 'Please Try Again' };
-        }
-    };
-
-    const { score, rating } = calculateScore();
-
+    const maxIncorrectMoves = GAME_SETTINGS.MAX_INCORRECT_MOVES;
+    const movesLeft = Math.max(0, maxIncorrectMoves - safeIncorrectMoves);
+    
+    // Format time properly
+    const minutes = Math.floor(Math.max(0, safeTimeLeft) / 60);
+    const seconds = Math.floor(Math.max(0, safeTimeLeft) % 60);
+    const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
     return (
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-2">Score</h2>
-            <div className="space-y-2">
-                <p>Level: {state.currentLevel}</p>
-                <p>Incorrect Moves: {state.incorrectMoves}</p>
-                <p>Current Score: {score}</p>
-                <p>Rating: {rating}</p>
-                <p>Points Remaining: {state.points}</p>
+        <div className="bg-white rounded-lg shadow p-4 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                    <h3 className="text-gray-600 text-sm font-semibold">Score</h3>
+                    <p className="text-2xl font-bold text-blue-600">{safeScore}</p>
+                </div>
+                <div className="text-center">
+                    <h3 className="text-gray-600 text-sm font-semibold">Level</h3>
+                    <p className="text-2xl font-bold text-purple-600">{safeLevel}</p>
+                </div>
+                <div className="text-center">
+                    <h3 className="text-gray-600 text-sm font-semibold">Time Left</h3>
+                    <p className="text-2xl font-bold text-green-600">{timeString}</p>
+                </div>
+                <div className="text-center">
+                    <h3 className="text-gray-600 text-sm font-semibold">Moves Left</h3>
+                    <p className={`text-2xl font-bold ${
+                        movesLeft <= 2 ? 'text-red-600' : 'text-orange-600'
+                    }`}>
+                        {movesLeft}
+                    </p>
+                </div>
             </div>
         </div>
     );
 };
-
-export default Scoreboard;

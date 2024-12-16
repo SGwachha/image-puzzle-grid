@@ -8,12 +8,12 @@ Internal Dependencies
 */
 import { useGame } from '../context/GameContext.tsx';
 
-const ImagePreview: React.FC = () => {
-    const { state, dispatch } = useGame();
+export const ImagePreview: React.FC = () => {
+    const { gameState, dispatch } = useGame();
     const [showPreview, setShowPreview] = useState(false);
 
     const handlePreviewClick = () => {
-        if (state.points > 0 && !showPreview) {
+        if (gameState.score > 0 && !showPreview) {
             dispatch({ type: 'USE_PREVIEW' });
             setShowPreview(true);
             setTimeout(() => {
@@ -27,13 +27,13 @@ const ImagePreview: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Image Preview</h3>
                 <span className="text-sm text-gray-500">
-                    Points: {state.points}
+                    Points: {gameState.score}
                 </span>
             </div>
             {showPreview ? (
                 <div className="relative aspect-square">
                     <img
-                        src={state.currentImage}
+                        src={gameState.currentImage}
                         alt="Preview"
                         className="w-full h-full object-cover rounded"
                     />
@@ -41,9 +41,9 @@ const ImagePreview: React.FC = () => {
             ) : (
                 <button
                     onClick={handlePreviewClick}
-                    disabled={state.points <= 0}
+                    disabled={gameState.score <= 0}
                     className={`w-full py-2 px-4 rounded ${
-                        state.points > 0
+                        gameState.score > 0
                             ? 'bg-blue-500 text-white hover:bg-blue-600'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
@@ -59,5 +59,3 @@ const ImagePreview: React.FC = () => {
         </div>
     );
 };
-
-export default ImagePreview;

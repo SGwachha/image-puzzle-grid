@@ -35,4 +35,7 @@ export interface GameState {
     consecutiveFailures: number;
     completedImages: string[];
     maxTime: number;
+    score: number;
+    rating: 'Excellent' | 'Good Job' | 'You Can Do Better' | 'Please Try Again' | null;
+    isPreviewActive: boolean;
 } 

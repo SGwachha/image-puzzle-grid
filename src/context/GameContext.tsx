@@ -1,242 +1,142 @@
-/*
-React Dependencies
-*/
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useReducer, useEffect, ReactNode, useContext } from 'react';
+import { encryptData, decryptData } from '../utils/security.ts';
+import { GAME_SETTINGS, PUZZLE_IMAGES } from '../utils/puzzleConfig.ts';
 
-/*
-Internal Dependencies
-*/
-import { GameState, PuzzlePiece } from '../types';
-import { getRandomPuzzleImage } from '../config/images.ts';
-
-const initialState: GameState = {
-    currentGrid: 2,
-    timeRemaining: 300,
-    incorrectMoves: 0,
-    points: 3,
-    previewsUsed: 0,
-    currentImage: '',
-    currentImageDetails: null,
-    pieces: [],
-    isGameStarted: false,
-    currentLevel: 1,
-    consecutiveFailures: 0,
-    completedImages: [],
-    maxTime: 300
-};
+export interface GameState {
+    score: number;
+    level: number;
+    timeRemaining: number;
+    incorrectMoves: number;
+    previewsRemaining: number;
+    currentImage: number;
+    gridSize: number;
+    consecutiveFailures: number;
+    isPreviewActive: boolean;
+    gameStatus: 'playing' | 'completed' | 'failed';
+}
 
 type GameAction = 
-    | { type: 'START_GAME' }
-    | { type: 'SET_GRID_SIZE'; size: number }
-    | { type: 'MOVE_PIECE'; pieceId: number; newPosition: number }
-    | { type: 'DECREASE_TIME' }
+    | { type: 'PUZZLE_COMPLETED' }
+    | { type: 'INCORRECT_MOVE' }
     | { type: 'USE_PREVIEW' }
+    | { type: 'UPDATE_TIME'; payload: number }
     | { type: 'RESET_GAME' }
-    | { type: 'NEXT_LEVEL' }
-    | { type: 'RECORD_INCORRECT_MOVE' };
+    | { type: 'SET_GRID_SIZE'; payload: number }
+    | { type: 'TOGGLE_PREVIEW' }
+    | { type: 'GAME_OVER' };
+
+const initialState: GameState = {
+    score: GAME_SETTINGS.INITIAL_POINTS,
+    level: 1,
+    timeRemaining: GAME_SETTINGS.INITIAL_TIME,
+    incorrectMoves: 0,
+    previewsRemaining: 3,
+    currentImage: 0,
+    gridSize: 2,
+    consecutiveFailures: 0,
+    isPreviewActive: false,
+    gameStatus: 'playing'
+};
 
 const gameReducer = (state: GameState, action: GameAction): GameState => {
     switch (action.type) {
-        case 'START_GAME':
-            const image = getRandomPuzzleImage();
-            const pieces = generatePuzzlePieces(state.currentGrid, image.url);
+        case 'PUZZLE_COMPLETED':
+            const nextLevel = state.level + 1;
+            const nextImage = (state.currentImage + 1) % PUZZLE_IMAGES.length;
             return {
                 ...state,
-                currentImage: image.url,
-                currentImageDetails: {
-                    name: image.name,
-                    difficulty: getDifficulty(state.currentGrid),
-                    category: 'general'
-                },
-                pieces: shufflePieces(pieces),
-                isGameStarted: true,
-                timeRemaining: state.maxTime - ((state.currentLevel - 1) * 30)
+                level: nextLevel,
+                currentImage: nextImage,
+                timeRemaining: Math.max(
+                    GAME_SETTINGS.INITIAL_TIME - (nextLevel * GAME_SETTINGS.TIME_REDUCTION_PER_LEVEL),
+                    120
+                ),
+                consecutiveFailures: 0,
+                gameStatus: nextLevel > PUZZLE_IMAGES.length ? 'completed' : 'playing'
             };
 
-        case 'SET_GRID_SIZE':
+        case 'INCORRECT_MOVE':
+            const newIncorrectMoves = state.incorrectMoves + 1;
             return {
                 ...state,
-                currentGrid: action.size,
-                pieces: []
-            };
-
-        case 'MOVE_PIECE':
-            const updatedPieces = state.pieces.map(piece => {
-                if (piece.id === action.pieceId) {
-                    return { ...piece, currentPosition: action.newPosition };
-                }
-                return piece;
-            });
-            return {
-                ...state,
-                pieces: updatedPieces
-            };
-
-        case 'DECREASE_TIME':
-            return {
-                ...state,
-                timeRemaining: Math.max(0, state.timeRemaining - 1)
+                incorrectMoves: newIncorrectMoves,
+                timeRemaining: state.timeRemaining - GAME_SETTINGS.TIME_PENALTY_PER_MISTAKE,
+                gameStatus: newIncorrectMoves > GAME_SETTINGS.MAX_INCORRECT_MOVES ? 'failed' : 'playing'
             };
 
         case 'USE_PREVIEW':
-            if (state.points > 0) {
-                return {
-                    ...state,
-                    points: state.points - 1,
-                    previewsUsed: state.previewsUsed + 1
-                };
-            }
-            return state;
-
-        case 'RECORD_INCORRECT_MOVE':
             return {
                 ...state,
-                incorrectMoves: state.incorrectMoves + 1,
-                timeRemaining: Math.max(0, state.timeRemaining - 10)
+                score: Math.max(0, state.score - 1),
+                previewsRemaining: state.previewsRemaining - 1,
+                isPreviewActive: true
             };
 
-        case 'NEXT_LEVEL':
-            if (state.consecutiveFailures >= 3) {
-                localStorage.clear();
-                return initialState;
-            }
-
-            const newLevel = state.currentLevel + 1;
-            const newState = {
+        case 'TOGGLE_PREVIEW':
+            return {
                 ...state,
-                currentLevel: newLevel,
-                incorrectMoves: 0,
-                isGameStarted: false,
-                completedImages: [...state.completedImages, state.currentImage],
-                maxTime: Math.max(60, state.maxTime - 30),
-                timeRemaining: Math.max(60, state.maxTime - 30),
-                currentGrid: Math.min(12, state.currentGrid + (newLevel % 3 === 0 ? 1 : 0))
+                isPreviewActive: !state.isPreviewActive
             };
 
-            localStorage.setItem('puzzleGameState', JSON.stringify(newState));
-            return newState;
+        case 'GAME_OVER':
+            const newFailures = state.consecutiveFailures + 1;
+            return {
+                ...state,
+                consecutiveFailures: newFailures,
+                gameStatus: newFailures >= GAME_SETTINGS.MAX_CONSECUTIVE_FAILURES ? 'failed' : 'playing'
+            };
 
         case 'RESET_GAME':
-            const resetState = {
-                ...initialState,
-                consecutiveFailures: state.consecutiveFailures + 1
-            };
-
-            if (resetState.consecutiveFailures >= 3) {
-                localStorage.clear();
-                return initialState;
-            }
-
-            localStorage.setItem('puzzleGameState', JSON.stringify(resetState));
-            return resetState;
+            return initialState;
 
         default:
             return state;
     }
 };
 
-// Helper functions
-const generatePuzzlePieces = (gridSize: number, imageUrl: string): PuzzlePiece[] => {
-    const totalPieces = gridSize * gridSize;
-    const pieces: PuzzlePiece[] = [];
-
-    for (let i = 0; i < totalPieces; i++) {
-        pieces.push({
-            id: i,
-            currentPosition: i,
-            correctPosition: i,
-            imageUrl,
-            isCorrect: false,
-            gridSize
-        });
-    }
-
-    return pieces;
-};
-
-const shufflePieces = (pieces: PuzzlePiece[]): PuzzlePiece[] => {
-    const shuffled = [...pieces];
-    let currentIndex = shuffled.length;
-
-    while (currentIndex > 0) {
-        const randomIndex = Math.floor(Math.random() * currentIndex);
-        currentIndex--;
-
-        // Swap positions
-        const temp = shuffled[currentIndex].currentPosition;
-        shuffled[currentIndex].currentPosition = shuffled[randomIndex].currentPosition;
-        shuffled[randomIndex].currentPosition = temp;
-    }
-
-    // Ensure puzzle is solvable
-    if (!isPuzzleSolvable(shuffled)) {
-        // Swap last two pieces if puzzle is not solvable
-        const lastIndex = shuffled.length - 1;
-        const temp = shuffled[lastIndex].currentPosition;
-        shuffled[lastIndex].currentPosition = shuffled[lastIndex - 1].currentPosition;
-        shuffled[lastIndex - 1].currentPosition = temp;
-    }
-
-    return shuffled;
-};
-
-const isPuzzleSolvable = (pieces: PuzzlePiece[]): boolean => {
-    let inversions = 0;
-    for (let i = 0; i < pieces.length - 1; i++) {
-        for (let j = i + 1; j < pieces.length; j++) {
-            if (pieces[i].currentPosition > pieces[j].currentPosition) {
-                inversions++;
-            }
-        }
-    }
-    return inversions % 2 === 0;
-};
-
-const getDifficulty = (gridSize: number): string => {
-    if (gridSize <= 3) return 'Easy';
-    if (gridSize <= 6) return 'Medium';
-    return 'Hard';
-};
-
 export const GameContext = createContext<{
-    state: GameState;
+    gameState: GameState;
     dispatch: React.Dispatch<GameAction>;
-} | null>(null);
+}>({
+    gameState: initialState,
+    dispatch: () => null
+});
 
-export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, dispatch] = useReducer(gameReducer, initialState, () => {
+export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const [gameState, dispatch] = useReducer(gameReducer, initialState);
+
+    // Load game state from localStorage on mount
+    useEffect(() => {
         const savedState = localStorage.getItem('puzzleGameState');
         if (savedState) {
             try {
-                const parsedState = JSON.parse(savedState);
-                if (parsedState.currentLevel && parsedState.timeRemaining) {
-                    return parsedState;
-                }
+                const decryptedState = decryptData(savedState);
+                const parsedState = JSON.parse(decryptedState);
+                dispatch({ type: 'RESET_GAME', payload: parsedState });
             } catch (error) {
-                console.error('Error loading saved state:', error);
+                console.error('Error loading game state:', error);
             }
         }
-        return initialState;
-    });
+    }, []);
 
+    // Save game state to localStorage on changes
     useEffect(() => {
-        if (state.isGameStarted) {
-            localStorage.setItem('puzzleGameState', JSON.stringify(state));
-        }
-    }, [state]);
+        const encryptedState = encryptData(JSON.stringify(gameState));
+        localStorage.setItem('puzzleGameState', encryptedState);
+    }, [gameState]);
 
+    // Handle preview timer
     useEffect(() => {
-        if (state.isGameStarted && state.timeRemaining > 0) {
-            const timer = setInterval(() => {
-                dispatch({ type: 'DECREASE_TIME' });
-            }, 1000);
-
-            return () => clearInterval(timer);
+        if (gameState.isPreviewActive) {
+            const timer = setTimeout(() => {
+                dispatch({ type: 'TOGGLE_PREVIEW' });
+            }, GAME_SETTINGS.PREVIEW_DURATION);
+            return () => clearTimeout(timer);
         }
-    }, [state.isGameStarted, state.timeRemaining]);
+    }, [gameState.isPreviewActive]);
 
     return (
-        <GameContext.Provider value={{ state, dispatch }}>
+        <GameContext.Provider value={{ gameState, dispatch }}>
             {children}
         </GameContext.Provider>
     );
@@ -248,17 +148,4 @@ export const useGame = () => {
         throw new Error('useGame must be used within a GameProvider');
     }
     return context;
-};
-
-const saveState = (state: GameState) => {
-    try {
-        localStorage.setItem('puzzleGameState', JSON.stringify(state));
-    } catch (error) {
-        console.error('Failed to save game state:', error);
-        // Handle storage quota exceeded
-        if (error.name === 'QuotaExceededError') {
-            localStorage.clear();
-            localStorage.setItem('puzzleGameState', JSON.stringify(state));
-        }
-    }
 }; 

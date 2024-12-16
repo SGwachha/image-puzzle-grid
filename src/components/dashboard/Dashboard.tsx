@@ -1,15 +1,20 @@
 import React from 'react';
-import { useAuth } from '../../hooks/useAuth.ts';
-import PuzzleGrid from '../puzzleGrid.tsx';
-import Timer from '../timer.tsx';
-import Scoreboard from '../scoreboard.tsx';
-import Leaderboard from '../Leaderboard.tsx';
-import PerformanceMonitor from '../PerformanceMonitor.tsx';
-import GridSizeSelector from '../GridSizeSelector.tsx';
-import ImagePreview from '../imagePreview.tsx';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { useGame } from '../../context/GameContext.tsx';
+import { PuzzleGrid } from '../puzzleGrid.tsx';
+import { Timer } from '../timer.tsx';
+import { Scoreboard } from '../scoreboard.tsx';
+import { Leaderboard } from '../Leaderboard.tsx';
+import { PerformanceMonitor } from '../PerformanceMonitor.tsx';
+import { GridSizeSelector } from '../GridSizeSelector.tsx';
+import { ImagePreview } from '../imagePreview.tsx';
+import { PUZZLE_IMAGES } from '../../utils/puzzleConfig.ts';
 
-const Dashboard: React.FC = () => {
+export const Dashboard: React.FC = () => {
     const { user, logout } = useAuth();
+    const { gameState } = useGame();
+
+    const currentImage = PUZZLE_IMAGES[gameState.currentImage % PUZZLE_IMAGES.length];
 
     return (
         <div className="min-h-screen bg-gray-100">
@@ -35,7 +40,10 @@ const Dashboard: React.FC = () => {
                     <div className="lg:col-span-2 space-y-6">
                         <div className="bg-white rounded-lg shadow p-6">
                             <GridSizeSelector />
-                            <PuzzleGrid />
+                            <PuzzleGrid 
+                                imageUrl={currentImage.url}
+                                gridSize={gameState.gridSize}
+                            />
                         </div>
                         <div className="grid grid-cols-2 gap-6">
                             <Timer />
@@ -45,7 +53,12 @@ const Dashboard: React.FC = () => {
 
                     {/* Sidebar */}
                     <div className="space-y-6">
-                        <Scoreboard />
+                        <Scoreboard 
+                            score={gameState.score}
+                            level={gameState.level}
+                            timeLeft={gameState.timeRemaining}
+                            incorrectMoves={gameState.incorrectMoves}
+                        />
                         <Leaderboard />
                     </div>
                 </div>
@@ -55,6 +68,4 @@ const Dashboard: React.FC = () => {
             {process.env.NODE_ENV === 'development' && <PerformanceMonitor />}
         </div>
     );
-};
-
-export default Dashboard; 
+}; 

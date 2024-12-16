@@ -1,105 +1,118 @@
-import React, { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth.ts';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Notification from '../common/Notification.tsx';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import { useAuth } from '../../context/AuthContext.tsx';
 
 const Login: React.FC = () => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const { login } = useAuth();
+    const [formData, setFormData] = useState({
+        username: '',
+        password: ''
+    });
+    const [error, setError] = useState<string | null>(null);
+    const { login, isAuthenticated, isLoading } = useAuth();
     const navigate = useNavigate();
 
-    // Function to handle the login
+    // Handle navigation after successful login
+    useEffect(() => {
+        if (isAuthenticated && !isLoading) {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [isAuthenticated, isLoading, navigate]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+        });
+        setError(null);
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+        setError(null);
+
         try {
-            const success = await login(username, password);
-            if (!success) {
-                setNotification({
-                    message: 'Invalid username or password',
-                    type: 'error'
-                });
-                return;
-            }
-
-            setNotification({
-                message: 'Login successful! Redirecting...',
-                type: 'success'
-            });
-
-        } catch (error) {
-            setNotification({
-                message: 'An error occurred during login',
-                type: 'error'
-            });
+            await login(formData.username, formData.password);
+            // Navigation will be handled by the useEffect above
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Login failed');
+            setFormData(prev => ({
+                ...prev,
+                password: ''
+            }));
         }
     };
 
-    const togglePasswordVisibility = () => {
-        setShowPassword(!showPassword);
-    };
+    if (isLoading) {
+        return (
+            <div className="flex min-h-screen bg-gradient-to-br from-blue-500 to-purple-600">
+                <div className="m-auto">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100">
-            <div className="bg-white p-8 rounded-lg shadow-md w-96">
-                <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
-                {notification && (
-                    <Notification 
-                        message={notification.message} 
-                        type={notification.type} 
-                    />
-                )}
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2">
-                            Username
-                        </label>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="w-full p-2 border rounded"
-                            required
-                        />
-                    </div>
-                    <div className="mb-6">
-                        <label className="block text-gray-700 text-sm font-bold mb-2">
-                            Password
-                        </label>
-                        <div className="relative">
+        <div className="flex min-h-screen bg-gradient-to-br from-blue-500 to-purple-600">
+            <div className="m-auto w-full max-w-md">
+                <div className="bg-white rounded-lg shadow-xl p-8">
+                    <h2 className="text-3xl font-bold text-center text-gray-800 mb-8">
+                        Sign In
+                    </h2>
+                    
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div>
+                            <label className="block text-gray-700 text-sm font-bold mb-2">
+                                Username
+                            </label>
                             <input
-                                type={showPassword ? "text" : "password"}
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full p-2 border rounded"
+                                type="text"
+                                name="username"
+                                value={formData.username}
+                                onChange={handleChange}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
                                 required
                             />
-                            <button
-                                type="button"
-                                onClick={togglePasswordVisibility}
-                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                            >
-                                {showPassword ? <FaEyeSlash /> : <FaEye />}
-                            </button>
                         </div>
-                    </div>
-                    <button
-                        type="submit"
-                        className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mb-4"
-                    >
-                        Login
-                    </button>
-                    <div className="text-center text-sm">
-                        Don't have an account?{' '}
-                        <Link to="/signup" className="text-blue-500 hover:text-blue-700">
-                            Sign up here
+
+                        <div>
+                            <label className="block text-gray-700 text-sm font-bold mb-2">
+                                Password
+                            </label>
+                            <input
+                                type="password"
+                                name="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                                required
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                            {isLoading ? 'Signing in...' : 'Sign In'}
+                        </button>
+                    </form>
+
+                    <div className="mt-6 text-center">
+                        <Link 
+                            to="/signup"
+                            className="text-blue-600 hover:text-blue-800 transition-colors"
+                        >
+                            Don't have an account? Sign up
                         </Link>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     );

@@ -1,81 +1,72 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 interface PerformanceMetrics {
     fps: number;
     memory: {
         usedJSHeapSize: number;
         totalJSHeapSize: number;
-        jsHeapSizeLimit: number;
     } | null;
     cpuUsage: number;
 }
 
-const PerformanceContext = createContext<PerformanceMetrics | null>(null);
+const initialMetrics: PerformanceMetrics = {
+    fps: 0,
+    memory: null,
+    cpuUsage: 0
+};
 
-export const PerformanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [metrics, setMetrics] = useState<PerformanceMetrics>({
-        fps: 0,
-        memory: null,
-        cpuUsage: 0
-    });
+const PerformanceContext = createContext<PerformanceMetrics>(initialMetrics);
+
+export const usePerformance = () => {
+    const context = useContext(PerformanceContext);
+    if (!context) {
+        throw new Error('usePerformance must be used within a PerformanceProvider');
+    }
+    return context;
+};
+
+export const PerformanceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const [metrics, setMetrics] = useState<PerformanceMetrics>(initialMetrics);
 
     useEffect(() => {
         let frameCount = 0;
         let lastTime = performance.now();
-        let framerId: number;
+        let animationFrameId: number;
 
-        const measureFPS = () => {
-            frameCount++;
+        const measurePerformance = () => {
             const currentTime = performance.now();
-            
-            if (currentTime >= lastTime + 1000) {
-                setMetrics(prev => ({
-                    ...prev,
-                    fps: frameCount,
-                }));
+            frameCount++;
+
+            if (currentTime - lastTime >= 1000) {
+                // Calculate FPS
+                const fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
+                
+                // Get memory usage if available
+                const memory = (performance as any).memory ? {
+                    usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
+                    totalJSHeapSize: (performance as any).memory.totalJSHeapSize
+                } : null;
+
+                // Simulate CPU usage
+                const cpuUsage = Math.random() * 100;
+
+                setMetrics({
+                    fps,
+                    memory,
+                    cpuUsage
+                });
+
                 frameCount = 0;
                 lastTime = currentTime;
             }
 
-            framerId = requestAnimationFrame(measureFPS);
+            animationFrameId = requestAnimationFrame(measurePerformance);
         };
 
-        const measurePerformance = () => {
-            // Memory usage (Chrome only)
-            if (window.performance && (performance as any).memory) {
-                const memory = (performance as any).memory;
-                setMetrics(prev => ({
-                    ...prev,
-                    memory: {
-                        usedJSHeapSize: memory.usedJSHeapSize,
-                        totalJSHeapSize: memory.totalJSHeapSize,
-                        jsHeapSizeLimit: memory.jsHeapSizeLimit
-                    }
-                }));
-            }
-
-            // Approximate CPU usage
-            const startTime = performance.now();
-            let endTime: number;
-
-            setTimeout(() => {
-                endTime = performance.now();
-                const timeDiff = endTime - startTime;
-                const cpuUsage = Math.min(100, (timeDiff / 10) * 100);
-                
-                setMetrics(prev => ({
-                    ...prev,
-                    cpuUsage
-                }));
-            }, 10);
-        };
-
-        framerId = requestAnimationFrame(measureFPS);
-        const performanceInterval = setInterval(measurePerformance, 1000);
+        measurePerformance();
 
         return () => {
-            cancelAnimationFrame(framerId);
-            clearInterval(performanceInterval);
+            cancelAnimationFrame(animationFrameId);
         };
     }, []);
 
@@ -84,12 +75,4 @@ export const PerformanceProvider: React.FC<{ children: React.ReactNode }> = ({ c
             {children}
         </PerformanceContext.Provider>
     );
-};
-
-export const usePerformance = () => {
-    const context = useContext(PerformanceContext);
-    if (!context) {
-        throw new Error('usePerformance must be used within a PerformanceProvider');
-    }
-    return context;
 }; 

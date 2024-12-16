@@ -10,6 +10,26 @@ const puzzleImages: PuzzleImage[] = [
         name: 'Cat',
         url: '/images/cat.jpg',
     },
+    {
+        id: 2,
+        name: 'Forest',
+        url: '/images/forest.webp',
+    },
+    {
+        id: 3,
+        name: 'Sky',
+        url: '/images/sky.webp',
+    },
+    {
+        id: 4,
+        name: 'Sunset',
+        url: '/images/sunsetTree.jpg',
+    },
+    {
+        id: 5,
+        name: 'waterfall',
+        url: '/images/waterfall.webp',
+    },
 ];
 
 export const getRandomPuzzleImage = (): PuzzleImage => {

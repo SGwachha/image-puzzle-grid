@@ -1,102 +1,140 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
 import { User } from '../types';
 import { 
     hashPassword, 
-    encryptData, 
-    decryptData, 
     createSession, 
     validateSession, 
-    getSessionUser 
+    extendSession, 
+    clearSession,
+    encryptData,
+    decryptData 
 } from '../utils/security.ts';
 
+interface AuthState {
+    user: User | null;
+    isLoading: boolean;
+    error: string | null;
+}
+
 export const useAuth = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-        return validateSession();
-    });
-    const [user, setUser] = useState<User | null>(() => {
-        return getSessionUser();
+    const [state, setState] = useState<AuthState>({
+        user: null,
+        isLoading: true,
+        error: null
     });
     const navigate = useNavigate();
 
+    // Check session on mount and set up interval for validation
     useEffect(() => {
-        if (isAuthenticated) {
-            navigate('/dashboard', { replace: true });
-        }
-    }, [isAuthenticated, navigate]);
+        const checkSession = () => {
+            if (!validateSession()) {
+                setState(prev => ({
+                    ...prev,
+                    user: null,
+                    isLoading: false
+                }));
+                navigate('/login');
+                return;
+            }
+            extendSession();
+        };
+
+        checkSession();
+        const interval = setInterval(checkSession, 60000);
+
+        return () => clearInterval(interval);
+    }, [navigate]);
 
     const login = async (username: string, password: string) => {
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+
         try {
-            const hashedPassword = hashPassword(password);
             const encryptedUsers = localStorage.getItem('users');
-            let users = [];
-            
-            if (encryptedUsers) {
-                const decryptedUsers = decryptData(encryptedUsers);
-                users = Array.isArray(decryptedUsers) ? decryptedUsers : [];
+            const users: User[] = encryptedUsers 
+                ? JSON.parse(decryptData(encryptedUsers))
+                : [];
+
+            const user = users.find(u => u.username === username);
+            if (!user || user.hashedPassword !== hashPassword(password)) {
+                throw new Error('Invalid username or password');
             }
 
-            const user = users.find((u: { username: string; hashedPassword: string }) => 
-                u.username === username && u.hashedPassword === hashedPassword
-            );
+            createSession(user);
 
-            if (user) {
-                createSession(user);
-                setUser(user);
-                setIsAuthenticated(true);
-                return true;
-            }
-            return false;
+            setState({
+                user,
+                isLoading: false,
+                error: null
+            });
+
+            navigate('/dashboard');
         } catch (error) {
-            console.error('Login error:', error);
-            return false;
+            setState(prev => ({
+                ...prev,
+                isLoading: false,
+                error: error instanceof Error ? error.message : 'Login failed'
+            }));
         }
     };
 
-    const register = (username: string, password: string) => {
+    const register = async (username: string, password: string) => {
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+
         try {
-            const hashedPassword = hashPassword(password);
             const encryptedUsers = localStorage.getItem('users');
-            let users = [];
+            const users: User[] = encryptedUsers 
+                ? JSON.parse(decryptData(encryptedUsers))
+                : [];
 
-            if (encryptedUsers) {
-                const decryptedUsers = decryptData(encryptedUsers);
-                users = Array.isArray(decryptedUsers) ? decryptedUsers : [];
+            if (users.some(u => u.username === username)) {
+                throw new Error('Username already exists');
             }
 
-            if (users.some((u: { username: string }) => u.username === username)) {
-                return false;
-            }
-
-            const newUser = {
+            const newUser: User = {
                 id: Date.now().toString(),
                 username,
-                hashedPassword,
+                hashedPassword: hashPassword(password),
                 currentScore: 0,
                 highestScore: 0,
                 currentLevel: 1
             };
 
-            users.push(newUser);
-            localStorage.setItem('users', encryptData(users));
-            return true;
+            const updatedUsers = [...users, newUser];
+            localStorage.setItem('users', encryptData(JSON.stringify(updatedUsers)));
+
+            createSession(newUser);
+
+            setState({
+                user: newUser,
+                isLoading: false,
+                error: null
+            });
+
+            navigate('/dashboard');
         } catch (error) {
-            console.error('Registration error:', error);
-            return false;
+            setState(prev => ({
+                ...prev,
+                isLoading: false,
+                error: error instanceof Error ? error.message : 'Registration failed'
+            }));
         }
     };
 
     const logout = () => {
-        try {
-            sessionStorage.removeItem('userSession');
-            setUser(null);
-            setIsAuthenticated(false);
-            navigate('/login', { replace: true });
-        } catch (error) {
-            console.error('Logout error:', error);
-        }
+        clearSession();
+        setState({
+            user: null,
+            isLoading: false,
+            error: null
+        });
+        navigate('/login');
     };
 
-    return { isAuthenticated, user, login, register, logout };
+    return {
+        ...state,
+        login,
+        register,
+        logout
+    };
 }; 

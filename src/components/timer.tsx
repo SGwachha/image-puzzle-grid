@@ -1,22 +1,20 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useContext } from 'react';
 import { useGame } from '../context/GameContext.tsx';
 
-const Timer: React.FC = () => {
-    const { state, dispatch } = useGame();
+export const Timer: React.FC = () => {
+    const { gameState, dispatch } = useGame();
 
     useEffect(() => {
-        if (!state.isGameStarted) return;
-
         const timer = setInterval(() => {
-            if (state.timeRemaining > 0) {
-                dispatch({ type: 'DECREASE_TIME' });
-            } else {
-                dispatch({ type: 'RESET_GAME' });
+            if (gameState.timeRemaining > 0 && gameState.gameStatus === 'playing') {
+                dispatch({ type: 'UPDATE_TIME', payload: gameState.timeRemaining - 1 });
+            } else if (gameState.timeRemaining <= 0) {
+                dispatch({ type: 'GAME_OVER' });
             }
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [state.isGameStarted, state.timeRemaining, dispatch]);
+    }, [gameState.timeRemaining, gameState.gameStatus, dispatch]);
 
     const formatTime = (seconds: number): string => {
         const minutes = Math.floor(seconds / 60);
@@ -25,10 +23,8 @@ const Timer: React.FC = () => {
     };
 
     return (
-        <div className="text-xl font-bold">
-            Time: {formatTime(state.timeRemaining)}
+        <div className="text-2xl font-bold">
+            Time: {formatTime(gameState.timeRemaining)}
         </div>
     );
 };
-
-export default Timer;
