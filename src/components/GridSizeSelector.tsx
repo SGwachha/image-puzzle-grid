@@ -1,9 +1,15 @@
-import React, { useContext } from 'react';
-import { GameContext } from '../context/GameContext.tsx';
-import { GRID_SIZES } from '../utils/puzzleConfig.ts';
+import React from 'react';
+import { useGame } from '../context/GameContext.tsx';
 
 export const GridSizeSelector: React.FC = () => {
-    const { gameState, dispatch } = useContext(GameContext);
+    const { gridSize, setGridSize } = useGame();
+    const minSize = 2;
+    const maxSize = 12;
+
+    const gridSizes = Array.from(
+        { length: (maxSize - minSize) / 2 + 1 },
+        (_, i) => minSize + i * 2
+    );
 
     return (
         <div className="mb-4">
@@ -11,14 +17,11 @@ export const GridSizeSelector: React.FC = () => {
                 Grid Size
             </label>
             <select
-                value={gameState.gridSize}
-                onChange={(e) => dispatch({ 
-                    type: 'SET_GRID_SIZE', 
-                    payload: parseInt(e.target.value) 
-                })}
+                value={gridSize}
+                onChange={(e) => setGridSize(parseInt(e.target.value))}
                 className="block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             >
-                {GRID_SIZES.map(size => (
+                {gridSizes.map(size => (
                     <option key={size} value={size}>
                         {size}x{size}
                     </option>

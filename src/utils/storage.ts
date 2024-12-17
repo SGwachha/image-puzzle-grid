@@ -1,115 +1,129 @@
-import { STORAGE_LIMITS } from './puzzleConfig.ts';
-import { encryptData, decryptData } from './security.ts';
+// Simple encryption key
+const ENCRYPTION_KEY = 'puzzleGameSecretKey123';
 
-export class StorageManager {
-    private static calculateStorageUsage(storage: Storage): number {
-        let total = 0;
-        for (let i = 0; i < storage.length; i++) {
-            const key = storage.key(i);
-            if (key) {
-                total += (key.length + (storage.getItem(key)?.length || 0)) * 2;
-            }
-        }
-        return total;
+// Storage limits in bytes
+const STORAGE_LIMIT = 5 * 1024 * 1024;
+
+// Custom encryption
+const encrypt = (data: string): string => {
+    let result = '';
+    for (let i = 0; i < data.length; i++) {
+        const charCode = data.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length);
+        result += String.fromCharCode(charCode);
     }
+    return btoa(result);
+};
 
-    private static async checkStorageLimit(storage: Storage, newDataSize: number): Promise<boolean> {
-        const currentUsage = this.calculateStorageUsage(storage);
-        return (currentUsage + newDataSize) <= (storage === localStorage ? 
-            STORAGE_LIMITS.LOCAL_STORAGE : STORAGE_LIMITS.SESSION_STORAGE);
+// Custom decryption
+const decrypt = (encryptedData: string): string => {
+    const data = atob(encryptedData);
+    let result = '';
+    for (let i = 0; i < data.length; i++) {
+        const charCode = data.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length);
+        result += String.fromCharCode(charCode);
     }
+    return result;
+};
 
-    static async setItem(key: string, value: any, storage: Storage = localStorage): Promise<boolean> {
-        try {
-            if (value === null || value === undefined) {
-                storage.removeItem(key);
-                return true;
-            }
-
-            const serializedValue = JSON.stringify(value);
-            const encryptedValue = encryptData(serializedValue);
-            
-            if (!encryptedValue) {
-                console.error('Failed to encrypt data');
-                return false;
-            }
-            
-            if (await this.checkStorageLimit(storage, encryptedValue.length * 2)) {
-                storage.setItem(key, encryptedValue);
-                return true;
-            } else {
-                throw new Error('Storage limit reached');
-            }
-        } catch (error) {
-            console.error('Storage error:', error);
-            return false;
+// Calculate storage usage
+const getStorageUsage = (storage: Storage): number => {
+    let total = 0;
+    for (let key in storage) {
+        if (storage.hasOwnProperty(key)) {
+            total += (storage[key].length + key.length) * 2;
         }
     }
+    return total;
+};
 
-    static getItem<T>(key: string, storage: Storage = localStorage): T | null {
+// Check if adding data would exceed storage limit
+const wouldExceedLimit = (storage: Storage, key: string, value: string): boolean => {
+    const currentUsage = getStorageUsage(storage);
+    const newItemSize = (key.length + value.length) * 2;
+    return (currentUsage + newItemSize) > STORAGE_LIMIT;
+};
+
+export class SecureStorage {
+    private storage: Storage;
+    private storageType: 'local' | 'session';
+
+    constructor(type: 'local' | 'session') {
+        this.storage = type === 'local' ? localStorage : sessionStorage;
+        this.storageType = type;
+    }
+
+    setItem(key: string, value: any): void {
+        const stringValue = JSON.stringify(value);
+        const encryptedValue = encrypt(stringValue);
+
+        if (wouldExceedLimit(this.storage, key, encryptedValue)) {
+            const error = new Error(`${this.storageType}Storage limit exceeded`);
+            error.name = 'StorageQuotaExceeded';
+            throw error;
+        }
+
         try {
-            const encryptedValue = storage.getItem(key);
-            if (!encryptedValue) return null;
-            
-            const decryptedValue = decryptData(encryptedValue);
-            if (!decryptedValue) {
-                console.error('Failed to decrypt data');
-                storage.removeItem(key);
-                return null;
+            this.storage.setItem(key, encryptedValue);
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                this.handleQuotaExceeded();
             }
-            
-            try {
-                return JSON.parse(decryptedValue) as T;
-            } catch (parseError) {
-                console.error('Failed to parse data:', parseError);
-                storage.removeItem(key);
-                return null;
-            }
-        } catch (error) {
-            console.error('Storage error:', error);
+            throw e;
+        }
+    }
+
+    getItem<T>(key: string): T | null {
+        const encryptedValue = this.storage.getItem(key);
+        if (!encryptedValue) return null;
+
+        try {
+            const decryptedValue = decrypt(encryptedValue);
+            return JSON.parse(decryptedValue);
+        } catch (e) {
+            console.error('Error decrypting data:', e);
             return null;
         }
     }
 
-    static removeItem(key: string, storage: Storage = localStorage): void {
-        storage.removeItem(key);
+    removeItem(key: string): void {
+        this.storage.removeItem(key);
     }
 
-    static clearStorage(storage: Storage = localStorage): void {
-        storage.clear();
+    clear(): void {
+        this.storage.clear();
     }
 
-    static getStorageUsagePercentage(storage: Storage = localStorage): number {
-        const currentUsage = this.calculateStorageUsage(storage);
-        const limit = storage === localStorage ? 
-            STORAGE_LIMITS.LOCAL_STORAGE : 
-            STORAGE_LIMITS.SESSION_STORAGE;
-        return (currentUsage / limit) * 100;
+    getUsagePercentage(): number {
+        return (getStorageUsage(this.storage) / STORAGE_LIMIT) * 100;
     }
 
-    static async handleStorageLimit(storage: Storage = localStorage): Promise<boolean> {
-        const usage = this.calculateStorageUsage(storage);
-        const limit = storage === localStorage ? 
-            STORAGE_LIMITS.LOCAL_STORAGE : 
-            STORAGE_LIMITS.SESSION_STORAGE;
-        
-        if (usage >= limit * 0.8) {
-            return false;
-        }
-        return true;
-    }
+    private handleQuotaExceeded(): void {
+        // Remove oldest items until we have enough space
+        const items = Object.entries(this.storage)
+            .map(([key, value]) => ({
+                key,
+                timestamp: this.getItemTimestamp(key)
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp);
 
-    static clearGameData(): void {
-        const keysToKeep = ['userSession'];
-        const keysToRemove: string[] = [];
-
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && !keysToKeep.includes(key)) {
-                keysToRemove.push(key);
+        for (const item of items) {
+            if (getStorageUsage(this.storage) <= STORAGE_LIMIT * 0.9) {
+                break;
             }
+            this.storage.removeItem(item.key);
         }
-
-        keysToRemove.forEach(key => localStorage.removeItem(key));
     }
-} 
+
+    private getItemTimestamp(key: string): number {
+        try {
+            const value = this.getItem<any>(key);
+            return value?.timestamp || 0;
+        } catch {
+            return 0;
+        }
+    }
+}
+
+// Create instances for local and session storage
+export const secureLocalStorage = new SecureStorage('local');
+export const secureSessionStorage = new SecureStorage('session'); 

@@ -1,188 +1,96 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
-import { User } from '../types';
-import { gameChannel } from '../utils/broadcastChannel.ts';
-import { StorageManager } from '../utils/storage.ts';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 
-interface LeaderboardEntry {
+interface Score {
     userId: string;
     username: string;
     score: number;
     level: number;
     completionTime: number;
     timestamp: number;
-    browser: string;
 }
 
-interface LeaderboardState {
-    scores: LeaderboardEntry[];
-    isLoading: boolean;
-    error: string | null;
+interface LeaderboardContextType {
+    scores: Score[];
+    addScore: (score: Omit<Score, 'timestamp'>) => void;
+    getTopScores: (limit?: number) => Score[];
+    getUserScores: (userId: string) => Score[];
 }
 
-type LeaderboardAction = 
-    | { type: 'UPDATE_SCORE'; payload: LeaderboardEntry }
-    | { type: 'SET_SCORES'; payload: LeaderboardEntry[] }
-    | { type: 'SET_LOADING'; payload: boolean }
-    | { type: 'SET_ERROR'; payload: string }
-    | { type: 'CLEAR_ERROR' };
-
-const initialState: LeaderboardState = {
-    scores: [],
-    isLoading: false,
-    error: null
-};
-
-const leaderboardReducer = (state: LeaderboardState, action: LeaderboardAction): LeaderboardState => {
-    switch (action.type) {
-        case 'UPDATE_SCORE': {
-            const updatedScores = [...state.scores];
-            const existingIndex = updatedScores.findIndex(s => s.userId === action.payload.userId);
-            
-            if (existingIndex >= 0) {
-                // Update only if new score is higher
-                if (action.payload.score > updatedScores[existingIndex].score) {
-                    updatedScores[existingIndex] = action.payload;
-                }
-            } else {
-                updatedScores.push(action.payload);
-            }
-            
-            // Sort by score and timestamp
-            updatedScores.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
-            
-            const topScores = updatedScores.slice(0, 100);
-            
-            return {
-                ...state,
-                scores: topScores,
-                error: null
-            };
-        }
-
-        case 'SET_SCORES':
-            return {
-                ...state,
-                scores: action.payload,
-                error: null
-            };
-
-        case 'SET_LOADING':
-            return {
-                ...state,
-                isLoading: action.payload
-            };
-
-        case 'SET_ERROR':
-            return {
-                ...state,
-                error: action.payload,
-                isLoading: false
-            };
-
-        case 'CLEAR_ERROR':
-            return {
-                ...state,
-                error: null
-            };
-
-        default:
-            return state;
-    }
-};
-
-export const LeaderboardContext = createContext<{
-    state: LeaderboardState;
-    dispatch: React.Dispatch<LeaderboardAction>;
-    updateScore: (score: Omit<LeaderboardEntry, 'timestamp' | 'browser'>) => void;
-} | null>(null);
+const LeaderboardContext = createContext<LeaderboardContextType | undefined>(undefined);
 
 export const LeaderboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, dispatch] = useReducer(leaderboardReducer, initialState);
+    const [scores, setScores] = useState<Score[]>([]);
+    const channelRef = useRef<BroadcastChannel | null>(null);
 
-    const getBrowser = useCallback(() => {
-        const userAgent = navigator.userAgent;
-        if (userAgent.includes('Chrome')) return 'Chrome';
-        if (userAgent.includes('Firefox')) return 'Firefox';
-        if (userAgent.includes('Safari')) return 'Safari';
-        if (userAgent.includes('Edge')) return 'Edge';
-        return 'Other';
-    }, []);
-
-    // Update score with browser info and broadcast
-    const updateScore = useCallback((score: Omit<LeaderboardEntry, 'timestamp' | 'browser'>) => {
-        const fullScore: LeaderboardEntry = {
-            ...score,
-            timestamp: Date.now(),
-            browser: getBrowser()
-        };
-
-        // Update local state
-        dispatch({ type: 'UPDATE_SCORE', payload: fullScore });
-
-        // Save to storage using StorageManager
-        const updatedScores = [...state.scores, fullScore];
-        StorageManager.setItem('leaderboardScores', updatedScores);
-
-        // Broadcast to other tabs
-        gameChannel.broadcast({
-            type: 'SCORE_UPDATE',
-            payload: fullScore,
-            userId: score.userId
-        });
-    }, [state.scores, getBrowser]);
-
-    // Listen for score updates from other tabs
+    // Load scores from localStorage
     useEffect(() => {
-        const handleStorageChange = (e: StorageEvent) => {
-            if (e.key === 'leaderboardScores') {
-                const scores = StorageManager.getItem<LeaderboardEntry[]>('leaderboardScores');
-                if (scores) {
-                    dispatch({ type: 'SET_SCORES', payload: scores });
-                }
+        const savedScores = localStorage.getItem('leaderboard');
+        if (savedScores) {
+            setScores(JSON.parse(savedScores));
+        }
+
+        // Create broadcast channel
+        channelRef.current = new BroadcastChannel('puzzle_game_leaderboard');
+        
+        // score updates from other tabs
+        channelRef.current.onmessage = (event) => {
+            if (event.data.type === 'SCORES_UPDATED') {
+                const newScores = event.data.scores;
+                setScores(prevScores => {
+                    // Only update if scores are different
+                    if (JSON.stringify(prevScores) !== JSON.stringify(newScores)) {
+                        return newScores;
+                    }
+                    return prevScores;
+                });
             }
         };
-
-        window.addEventListener('storage', handleStorageChange);
-        
-        // Subscribe to broadcast channel
-        const listenerId = `leaderboard-${Date.now()}`;
-        gameChannel.subscribe(listenerId, (message) => {
-            if (message.type === 'SCORE_UPDATE') {
-                dispatch({ type: 'UPDATE_SCORE', payload: message.payload });
-            }
-        });
 
         return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            gameChannel.unsubscribe(listenerId);
+            channelRef.current?.close();
+            channelRef.current = null;
         };
     }, []);
 
-    // Load initial scores
+    // Save scores to localStorage whenever they change
     useEffect(() => {
-        const loadScores = () => {
-            dispatch({ type: 'SET_LOADING', payload: true });
-            try {
-                const scores = StorageManager.getItem<LeaderboardEntry[]>('leaderboardScores');
-                if (scores) {
-                    dispatch({ type: 'SET_SCORES', payload: scores });
-                } else {
-                    dispatch({ type: 'SET_SCORES', payload: [] });
-                }
-            } catch (error) {
-                console.error('Error loading leaderboard:', error);
-                dispatch({ type: 'SET_ERROR', payload: 'Failed to load leaderboard' });
-                dispatch({ type: 'SET_SCORES', payload: [] });
-            } finally {
-                dispatch({ type: 'SET_LOADING', payload: false });
-            }
+        localStorage.setItem('leaderboard', JSON.stringify(scores));
+        
+        // score update to other tabs
+        if (channelRef.current) {
+            channelRef.current.postMessage({ type: 'SCORES_UPDATED', scores });
+        }
+    }, [scores]);
+
+    const addScore = (newScore: Omit<Score, 'timestamp'>) => {
+        const scoreWithTimestamp = {
+            ...newScore,
+            timestamp: Date.now()
         };
 
-        loadScores();
-    }, []);
+        setScores(prevScores => {
+            const updatedScores = [...prevScores, scoreWithTimestamp]
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 100);
+
+            return updatedScores;
+        });
+    };
+
+    const getTopScores = (limit = 10) => {
+        return [...scores]
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit);
+    };
+
+    const getUserScores = (userId: string) => {
+        return scores
+            .filter(score => score.userId === userId)
+            .sort((a, b) => b.timestamp - a.timestamp);
+    };
 
     return (
-        <LeaderboardContext.Provider value={{ state, dispatch, updateScore }}>
+        <LeaderboardContext.Provider value={{ scores, addScore, getTopScores, getUserScores }}>
             {children}
         </LeaderboardContext.Provider>
     );

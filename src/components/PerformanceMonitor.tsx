@@ -1,75 +1,106 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface PerformanceMetrics {
     fps: number;
     memory: {
         usedJSHeapSize: number;
         totalJSHeapSize: number;
-    } | null;
-    cpu: number | null;
+        jsHeapSizeLimit: number;
+    };
+    cpuLoad: number;
 }
 
 export const PerformanceMonitor: React.FC = () => {
     const [metrics, setMetrics] = useState<PerformanceMetrics>({
         fps: 0,
-        memory: null,
-        cpu: null
+        memory: {
+            usedJSHeapSize: 0,
+            totalJSHeapSize: 0,
+            jsHeapSizeLimit: 0
+        },
+        cpuLoad: 0
     });
 
+    const frameCount = useRef(0);
+    const lastTime = useRef(performance.now());
+    const animationFrameId = useRef<number>();
+    const isRunning = useRef(true);
+
+    // Calculate FPS
     useEffect(() => {
-        let frameCount = 0;
-        let lastTime = performance.now();
-        let animationFrameId: number;
-
-        const measurePerformance = () => {
+        const calculateFPS = () => {
+            if (!isRunning.current) return;
+            
+            frameCount.current++;
             const currentTime = performance.now();
-            frameCount++;
+            const elapsed = currentTime - lastTime.current;
 
-            if (currentTime - lastTime >= 1000) {
-                // Calculate FPS
-                const fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
-                
-                // Get memory usage if available
-                const memory = (performance as any).memory ? {
-                    usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
-                    totalJSHeapSize: (performance as any).memory.totalJSHeapSize
-                } : null;
-
-                setMetrics(prev => ({
-                    ...prev,
-                    fps,
-                    memory
-                }));
-
-                frameCount = 0;
-                lastTime = currentTime;
+            if (elapsed >= 1000) {
+                const fps = Math.round((frameCount.current * 1000) / elapsed);
+                setMetrics(prev => ({ ...prev, fps }));
+                frameCount.current = 0;
+                lastTime.current = currentTime;
             }
 
-            animationFrameId = requestAnimationFrame(measurePerformance);
+            animationFrameId.current = requestAnimationFrame(calculateFPS);
         };
 
-        measurePerformance();
+        calculateFPS();
 
         return () => {
-            cancelAnimationFrame(animationFrameId);
+            isRunning.current = false;
+            if (animationFrameId.current) {
+                cancelAnimationFrame(animationFrameId.current);
+            }
         };
     }, []);
 
-    const formatBytes = (bytes: number): string => {
-        const mb = bytes / (1024 * 1024);
-        return `${mb.toFixed(2)} MB`;
-    };
+    // Monitor memory and CPU
+    useEffect(() => {
+        const updateMetrics = () => {
+            if (!isRunning.current) return;
+
+            if ('memory' in performance) {
+                const memory = (performance as any).memory;
+                setMetrics(prev => ({
+                    ...prev,
+                    memory: {
+                        usedJSHeapSize: Math.round(memory.usedJSHeapSize / (1024 * 1024)),
+                        totalJSHeapSize: Math.round(memory.totalJSHeapSize / (1024 * 1024)),
+                        jsHeapSizeLimit: Math.round(memory.jsHeapSizeLimit / (1024 * 1024))
+                    }
+                }));
+            }
+
+            // Estimate CPU load
+            const iterations = 1000000;
+            const startTime = performance.now();
+            for (let i = 0; i < iterations; i++) {
+                Math.sqrt(i);
+            }
+            const endTime = performance.now();
+            const duration = endTime - startTime;
+            const baselineDuration = 50;
+            const load = Math.min(100, Math.round((duration / baselineDuration) * 100));
+            
+            setMetrics(prev => ({ ...prev, cpuLoad: load }));
+        };
+
+        const intervalId = setInterval(updateMetrics, 1000);
+
+        return () => {
+            isRunning.current = false;
+            clearInterval(intervalId);
+        };
+    }, []);
 
     return (
-        <div className="fixed bottom-4 left-4 bg-black bg-opacity-75 text-white p-4 rounded-lg font-mono text-sm">
-            <h3 className="font-bold mb-2">Performance Metrics</h3>
+        <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-white p-4 rounded-lg shadow-lg font-mono text-sm">
+            <h3 className="text-lg font-bold mb-2">Performance Monitor</h3>
             <div>FPS: {metrics.fps}</div>
-            {metrics.memory && (
-                <div>
-                    <div>Used Memory: {formatBytes(metrics.memory.usedJSHeapSize)}</div>
-                    <div>Total Memory: {formatBytes(metrics.memory.totalJSHeapSize)}</div>
-                </div>
-            )}
+            <div>Memory Usage: {metrics.memory.usedJSHeapSize}MB / {metrics.memory.totalJSHeapSize}MB</div>
+            <div>Memory Limit: {metrics.memory.jsHeapSizeLimit}MB</div>
+            <div>CPU Load: {metrics.cpuLoad}%</div>
         </div>
     );
 }; 

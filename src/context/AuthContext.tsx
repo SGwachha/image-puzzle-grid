@@ -1,23 +1,122 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { StorageManager } from '../utils/storage.ts';
-import { hashPassword } from '../utils/security.ts';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { hashPassword, createSession, validateSession, clearSession } from '../utils/auth.ts';
 
 interface User {
     id: string;
     username: string;
 }
 
-interface AuthContextType {
-    user: User | null;
-    isAuthenticated: boolean;
-    isInitialized: boolean;
-    isLoading: boolean;
-    login: (username: string, password: string) => Promise<void>;
-    signup: (username: string, password: string) => Promise<{ success: true, message: string }>;
-    logout: () => void;
+interface UserCredentials {
+    username: string;
+    passwordHash: string;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+interface AuthContextType {
+    user: User | null;
+    login: (username: string, password: string) => Promise<boolean>;
+    register: (username: string, password: string) => Promise<boolean>;
+    logout: () => void;
+    error: string | null;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [user, setUser] = useState<User | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const checkSession = () => {
+            if (!validateSession()) {
+                setUser(null);
+                return;
+            }
+
+            const sessionData = sessionStorage.getItem('puzzleGameSession');
+            if (sessionData) {
+                const { userId } = JSON.parse(sessionData);
+                const users = JSON.parse(localStorage.getItem('users') || '{}');
+                const userCredentials = users[userId];
+                if (userCredentials) {
+                    setUser({ id: userId, username: userCredentials.username });
+                }
+            }
+        };
+
+        checkSession();
+        window.addEventListener('focus', checkSession);
+        return () => window.removeEventListener('focus', checkSession);
+    }, []);
+
+    const register = async (username: string, password: string): Promise<boolean> => {
+        try {
+            const users = JSON.parse(localStorage.getItem('users') || '{}');
+            
+            // Check if username is taken
+            const isUsernameTaken = Object.values(users).some(
+                (user: any) => user.username.toLowerCase() === username.toLowerCase()
+            );
+            
+            if (isUsernameTaken) {
+                setError('Username is already taken');
+                return false;
+            }
+
+            const userId = `user_${Date.now()}`;
+            const passwordHash = hashPassword(password);
+
+            // Store user credentials
+            users[userId] = {
+                username,
+                passwordHash
+            };
+            localStorage.setItem('users', JSON.stringify(users));
+            setError(null);
+            return true;
+        } catch (err) {
+            setError('Registration failed');
+            return false;
+        }
+    };
+
+    const login = async (username: string, password: string): Promise<boolean> => {
+        try {
+            const users = JSON.parse(localStorage.getItem('users') || '{}');
+            const passwordHash = hashPassword(password);
+
+            // Find user by username and password
+            const userId = Object.keys(users).find(id => {
+                const user = users[id] as UserCredentials;
+                return user.username.toLowerCase() === username.toLowerCase() &&
+                       user.passwordHash === passwordHash;
+            });
+
+            if (!userId) {
+                setError('Invalid username or password');
+                return false;
+            }
+            const sessionToken = createSession(userId);
+            setUser({ id: userId, username: users[userId].username });
+            setError(null);
+            return true;
+        } catch (err) {
+            setError('Login failed');
+            return false;
+        }
+    };
+
+    const logout = () => {
+        clearSession();
+        setUser(null);
+        setError(null);
+    };
+
+    return (
+        <AuthContext.Provider value={{ user, login, register, logout, error }}>
+            {children}
+        </AuthContext.Provider>
+    );
+};
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
@@ -25,148 +124,4 @@ export const useAuth = () => {
         throw new Error('useAuth must be used within an AuthProvider');
     }
     return context;
-};
-
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [state, setState] = useState({
-        user: null as User | null,
-        isAuthenticated: false,
-        isInitialized: false,
-        isLoading: true
-    });
-
-    useEffect(() => {
-        const initializeAuth = () => {
-            try {
-                const session = StorageManager.getItem<User>('userSession', sessionStorage);
-                if (session) {
-                    setState(prev => ({
-                        ...prev,
-                        user: session,
-                        isAuthenticated: true,
-                        isInitialized: true,
-                        isLoading: false
-                    }));
-                } else {
-                    setState(prev => ({
-                        ...prev,
-                        user: null,
-                        isAuthenticated: false,
-                        isInitialized: true,
-                        isLoading: false
-                    }));
-                }
-            } catch (error) {
-                console.error('Error initializing auth:', error);
-                StorageManager.removeItem('userSession', sessionStorage);
-                setState(prev => ({
-                    ...prev,
-                    user: null,
-                    isAuthenticated: false,
-                    isInitialized: true,
-                    isLoading: false
-                }));
-            }
-        };
-
-        initializeAuth();
-    }, []);
-
-    const login = async (username: string, password: string) => {
-        setState(prev => ({ ...prev, isLoading: true }));
-        try {
-            const hashedPassword = hashPassword(password);
-            const users = StorageManager.getItem<Array<{
-                username: string;
-                password: string;
-                id: string;
-            }>>('users') || [];
-
-            const foundUser = users.find(u => u.username === username && u.password === hashedPassword);
-            if (!foundUser) {
-                throw new Error('Invalid credentials');
-            }
-
-            const userSession = { id: foundUser.id, username: foundUser.username };
-            await StorageManager.setItem('userSession', userSession, sessionStorage);
-            
-            setState(prev => ({
-                ...prev,
-                user: userSession,
-                isAuthenticated: true,
-                isLoading: false
-            }));
-        } catch (error) {
-            setState(prev => ({ ...prev, isLoading: false }));
-            throw new Error('Invalid username or password');
-        }
-    };
-
-    const signup = async (username: string, password: string) => {
-        setState(prev => ({ ...prev, isLoading: true }));
-        try {
-            if (!username || !password) {
-                throw new Error('Username and password are required');
-            }
-
-            const users = StorageManager.getItem<Array<{
-                username: string;
-                password: string;
-                id: string;
-            }>>('users') || [];
-
-            if (users.some(u => u.username === username)) {
-                throw new Error('Username already exists');
-            }
-
-            const newUser = {
-                id: Date.now().toString(),
-                username,
-                password: hashPassword(password)
-            };
-
-            users.push(newUser);
-            await StorageManager.setItem('users', users);
-            
-            setState(prev => ({ ...prev, isLoading: false }));
-            return { success: true, message: 'Registration successful! Please login.' };
-        } catch (error) {
-            setState(prev => ({ ...prev, isLoading: false }));
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error('Error during signup');
-        }
-    };
-
-    const logout = () => {
-        setState(prev => ({ ...prev, isLoading: true }));
-        StorageManager.removeItem('userSession', sessionStorage);
-        setState({
-            user: null,
-            isAuthenticated: false,
-            isInitialized: true,
-            isLoading: false
-        });
-    };
-
-    if (!state.isInitialized) {
-        return null;
-    }
-
-    return (
-        <AuthContext.Provider 
-            value={{ 
-                user: state.user, 
-                isAuthenticated: state.isAuthenticated, 
-                isInitialized: state.isInitialized,
-                isLoading: state.isLoading,
-                login, 
-                signup, 
-                logout 
-            }}
-        >
-            {children}
-        </AuthContext.Provider>
-    );
 }; 

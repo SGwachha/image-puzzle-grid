@@ -1,61 +1,74 @@
-/*
-React Dependencies
-*/
-import React, { useState } from 'react';
-
-/*
-Internal Dependencies
-*/
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext.tsx';
 
-export const ImagePreview: React.FC = () => {
-    const { gameState, dispatch } = useGame();
-    const [showPreview, setShowPreview] = useState(false);
+interface ImagePreviewProps {
+    imageUrl: string;
+}
+
+export const ImagePreview: React.FC<ImagePreviewProps> = ({ imageUrl }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(5);
+    const { points, setPoints } = useGame();
+
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        
+        if (isVisible) {
+            timer = setInterval(() => {
+                setTimeLeft((prev) => {
+                    if (prev <= 1) {
+                        setIsVisible(false);
+                        return 5;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [isVisible]);
 
     const handlePreviewClick = () => {
-        if (gameState.score > 0 && !showPreview) {
-            dispatch({ type: 'USE_PREVIEW' });
-            setShowPreview(true);
-            setTimeout(() => {
-                setShowPreview(false);
-            }, 5000);
+        if (points <= 0) {
+            alert('Not enough points to use preview!');
+            return;
         }
+
+        setPoints(prev => prev - 1);
+        setIsVisible(true);
+        setTimeLeft(5);
     };
 
     return (
-        <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold">Image Preview</h3>
-                <span className="text-sm text-gray-500">
-                    Points: {gameState.score}
-                </span>
-            </div>
-            {showPreview ? (
-                <div className="relative aspect-square">
-                    <img
-                        src={gameState.currentImage}
-                        alt="Preview"
-                        className="w-full h-full object-cover rounded"
-                    />
-                </div>
-            ) : (
-                <button
-                    onClick={handlePreviewClick}
-                    disabled={gameState.score <= 0}
-                    className={`w-full py-2 px-4 rounded ${
-                        gameState.score > 0
-                            ? 'bg-blue-500 text-white hover:bg-blue-600'
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                >
-                    Show Preview (1 point)
-                </button>
-            )}
-            {showPreview && (
-                <div className="mt-2 text-center text-sm text-gray-500">
-                    Preview will hide in 5 seconds
+        <div className="relative">
+            <button
+                onClick={handlePreviewClick}
+                className={`px-4 py-2 rounded-lg ${
+                    points > 0 
+                        ? 'bg-blue-500 hover:bg-blue-600' 
+                        : 'bg-gray-400 cursor-not-allowed'
+                } text-white font-semibold transition-colors`}
+                disabled={points <= 0}
+            >
+                Preview Image ({points} points)
+            </button>
+
+            {isVisible && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
+                    <div className="relative max-w-2xl p-4">
+                        <div className="absolute top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full">
+                            {timeLeft}s
+                        </div>
+                        <img 
+                            src={imageUrl} 
+                            alt="Puzzle Preview" 
+                            className="max-w-full max-h-[80vh] rounded-lg shadow-xl"
+                        />
+                    </div>
                 </div>
             )}
         </div>
     );
-};
+}; 
